@@ -14,6 +14,7 @@ typedef struct gamenode
    char              name[60];
    char              parent[128];
    char              clone[128];
+   char              command[256];    // optional custom launch command
 } g_node;
 
 typedef struct manufnode
@@ -32,7 +33,7 @@ m_node*  add_manuf(char*);
 m_node*  findmanuf(m_node*, char*);
 m_node*  gotolastmanuf(m_node*);
 
-g_node*  add_game(char*, char*, char*);
+g_node*  add_game(char*, char*, char*, char*);
 g_node*  gotolastgame(g_node*);
 g_node*  gotolastclone(g_node*);
 g_node*  findparentgame(g_node*, char*);

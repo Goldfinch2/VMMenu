@@ -30,7 +30,7 @@ ifeq ($(target),linux)
    $(info Building for Linux ZVG)
    VPATH=VMMSrc iniparser Linux Linux/zvg VMMSDL
    INC = `sdl2-config --cflags` -I./VMMSrc -I./Linux -I./Linux/zvg -I./iniparser -I./VMMSDL
-   LIBS= `sdl2-config --libs` -lSDL2 -lSDL2_mixer -lm
+   LIBS= `sdl2-config --libs` -lSDL2 -lSDL2_mixer -lSDL2_image -lm
    CFLAGS += -DZEKTORZVG -Wno-missing-field-initializers
    EXEC = vmmenu
    RM = rm -f
@@ -56,7 +56,7 @@ ifeq ($(target),linuxdvg)
    $(info Building for Linux DVG)
    VPATH=VMMSrc iniparser Linux Win32/dvg VMMSDL
    INC = `sdl2-config --cflags` -I./VMMSrc -I./Linux -I./Win32/dvg -I./iniparser -I./VMMSDL
-   LIBS= `sdl2-config --libs` -lSDL2 -lSDL2_mixer -lm
+   LIBS= `sdl2-config --libs` -lSDL2 -lSDL2_mixer -lSDL2_image -lm
    CFLAGS += -DUSBDVG -Wno-missing-field-initializers
    EXEC = vmmenu
    RM = rm -f
@@ -78,7 +78,7 @@ ifeq ($(target),Win32)
    $(info Building for Win32)
    VPATH=VMMSrc iniparser Win32 Win32/dvg VMMSDL
    INC = -IC:/mingw_dev_lib/include/SDL2 -I./VMMSrc -I./Win32/dvg -I./iniparser -I./Win32 -I./VMMSDL
-   LIBS = -LC:\mingw_dev_lib\lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_mixer -lm
+   LIBS = -LC:\mingw_dev_lib\lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_mixer -lSDL2_image -lm
    CFLAGS += -DUSBDVG -Wno-missing-field-initializers
    EXEC = vmmenu.exe
    RM = del

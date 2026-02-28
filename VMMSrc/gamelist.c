@@ -88,13 +88,15 @@ m_node* add_manuf(char *manuf)
 /**************************************
    Create a new game or clone record
 **************************************/
-g_node* add_game(char *gamename, char *mamename, char *clonename)
+g_node* add_game(char *gamename, char *mamename, char *clonename, char *cmdname)
 {
    g_node   *newrec;
    newrec = (g_node *)malloc(sizeof(g_node));   // create a new game record
    strcpy(newrec->name, gamename);
    strcpy(newrec->parent, mamename);
    strcpy(newrec->clone, clonename);
+   if (cmdname) strncpy(newrec->command, cmdname, sizeof(newrec->command) - 1);
+   else newrec->command[0] = '\0';
    newrec->next = NULL;
    newrec->prev = NULL;
    newrec->nclone = NULL;
@@ -202,7 +204,7 @@ m_node* createlist()
    char     temp[260];
    char     *nl;
    char     smanuf[30], sdesc[60], smame[128], sclone[128];
-   char     *manuf=smanuf, *desc=sdesc, *mame=smame, *clone=sclone;
+   char     *manuf=smanuf, *desc=sdesc, *mame=smame, *clone=sclone, *cmd;
    FILE     *fp;
    m_node   *man_root = NULL, *man_cursor = NULL, *man_last = NULL;
    g_node   *game_root = NULL, *game_cursor = NULL, *game_last = NULL;
@@ -221,12 +223,8 @@ m_node* createlist()
          manuf = strtok(temp, "|");
          desc = strtok(NULL, "|");
          mame = strtok(NULL, "|");
-         clone = strtok(NULL, "|");
-         //printf("manuf: %s desc: %s mame: %s clone %s \n ",manuf, desc, mame, clone);
-         nl = strrchr(clone, '\r');
-         if (nl) *nl = '\0';
-         nl = strrchr(clone, '\n');
-         if (nl) *nl = '\0';
+         clone = strtok(NULL, "|\r\n");
+         cmd = strtok(NULL, "|\r\n");        // optional 5th field: custom launch command
 
          man_cursor = findmanuf(man_root, manuf);
          if (man_cursor == NULL)
@@ -246,7 +244,7 @@ m_node* createlist()
          // man_cursor points to our manufacturer so now we need to add the game
          if  (strcmp(clone, mame) == 0)                  // original game to add
          {
-            game_cursor = add_game(desc, mame, clone);
+            game_cursor = add_game(desc, mame, clone, cmd);
             // check a clone hasn't been added as a parent
             game_root = findparentgame(man_cursor->firstgame, mame);
             if (game_root)
@@ -280,7 +278,7 @@ m_node* createlist()
          }
          else  // add a clone
          {
-            game_cursor = add_game(desc, mame, clone);
+            game_cursor = add_game(desc, mame, clone, cmd);
             game_root = findparentgame(man_cursor->firstgame, mame);
             if (game_root)                               // check if parent is already added
             {

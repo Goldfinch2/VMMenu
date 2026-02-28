@@ -14,7 +14,7 @@ void  processmouse(void);                               // Process mouse/spinner
 int   sendframe(void);                                  // Send a frame to the VG and/or SDL
 void  ShutdownAll(void);                                // Shutdown the VG and SDL
 void  drawvector(point, point, float, float);           // draw a vector between 2 points
-void	RunGame(char*);                                   // Generate command to run a game
+void	RunGame(char*, char*);                             // Run a game (romname, custom command)
 void  FrameSendSDL(void);                               // Send a frame to the SDL surface
 void  SDLvector(float, float, float, float, int, int);  // Draw a vector on the SDL surface
 void  InitialiseSDL(int);                               // Start up SDL
@@ -22,6 +22,21 @@ void  CloseSDL(int);                                    // Close down SDL
 void  mousepos(int*, int*);                             // Mouse position
 void  setcolour(int, int);                              // set colour and brightness of next vector
 void  playsound(int);                                   // Play a sound effect
+void  updateMarquee(const char*, const char*);           // Load marquee PNG (clone, parent)
+void  renderMarquee(void);                              // Render marquee to SDL window
+void  initMarqueeWindow(void);                          // Create marquee window on specified display
+void  closeMarqueeWindow(void);                         // Close marquee window
+
+// Marquee settings structure
+typedef struct {
+   int  enabled;           // 0=disabled, 1=enabled
+   int  showonbrowse;      // show marquee while browsing games
+   int  showonlaunch;      // show marquee when launching game
+   int  display;           // which display to show marquee on (0=primary)
+   char path[256];         // path to marquee artwork
+} marquee_settings;
+
+extern marquee_settings marquee;
 
 #endif
 

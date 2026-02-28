@@ -166,6 +166,10 @@ static int   colours[2][7];             // array of [colours][7] and [intensitie
 
 static char  attractargs[30];
 static int   totalnumgames=0;
+static int   cfgDirty=0;                // set when settings change, triggers cfg save on exit
+static Uint32 marqueeTime=0;            // SDL tick target for loading marquee
+static char  pendingClone[128]="";
+static char  pendingParent[128]="";
 
 static char  autogame[30];
 static int   autostart=0;
@@ -230,24 +234,9 @@ int main(int argc, char *argv[])
    {
       ini = dictionary_new(0);
       printf("Creating new CFG file.\n");
+      cfgDirty = 1;                       // New file, save defaults on exit
    }
    getsettings();
-
-// *********************************************************************************
-// Save a sanitised version of the cfg file, it may have been edited by the user
-// This also ensures a cfg file is created even if the menu does not run 
-
-   inifp = fopen (ini_name, "w" );
-   if (inifp != NULL)
-   {
-      printf("\nSaving sanitised cfg file... ");
-      writecfg();
-      iniparser_dump_ini(ini, inifp);
-      printf("Done.\n");
-      fclose(inifp);
-   }
-
-// *********************************************************************************
 
    // Set up rotation
    if ((optz[o_rot] == 1) || (optz[o_rot] == 3))
@@ -333,7 +322,7 @@ int main(int argc, char *argv[])
         if (autostart_allowed) 
         {
             printf("\nAutostart configured to run \"%s\"...\n", autogame);
-            RunGame(autogame);
+            RunGame(autogame, NULL);
         }
    }
    // If we exit the auto started game, or aren't autostarting, lets go with the menu intro and loop
@@ -347,6 +336,13 @@ int main(int argc, char *argv[])
       if (optz[o_stars])   showstars();
 
       cc=getkey();                              // Check keys and mouse movement
+
+      // Marquee delay: load marquee after 1 second of no game change
+      if (marqueeTime > 0 && SDL_GetTicks() >= marqueeTime)
+      {
+         marqueeTime = 0;
+         updateMarquee(pendingClone, pendingParent);
+      }
 
       if (timeout > 1800)      // ############## screensaver mode 1800 * 1/60 = 30 seconds ##############
       {
@@ -420,9 +416,15 @@ int main(int argc, char *argv[])
                sel_game    = vectorgames->firstgame;
                sel_clone   = sel_game;
                man_menu    = 1;
+               marqueeTime = 0; updateMarquee(NULL, NULL);
             }
-            if (cc == keyz[k_menu])          man_menu = !man_menu;         // Toggle between manufacturer and game menus
-            if (cc == keyz[k_random])        RunGame(GetRandomGame(vectorgames)->clone);
+            if (cc == keyz[k_menu])
+            {
+               man_menu = !man_menu;                                          // Toggle between manufacturer and game menus
+               if (man_menu) { marqueeTime = 0; updateMarquee(NULL, NULL); }   // Clear marquee in manufacturer menu
+               else { marqueeTime = SDL_GetTicks() + 1000; strncpy(pendingClone, sel_clone->clone, sizeof(pendingClone) - 1); strncpy(pendingParent, sel_game->parent, sizeof(pendingParent) - 1); }
+            }
+            if (cc == keyz[k_random])        { g_node *rg = GetRandomGame(vectorgames); RunGame(rg->clone, rg->command); }
             if (cc == keyz[k_quit])                                        // See if you want to quit
             {
                if (reallyescape()) break;                                  // if [ESC] confirmed, exit menu
@@ -454,6 +456,7 @@ int main(int argc, char *argv[])
                   man_menu = 0;
                   cc = 0;
                   gamenum=1;
+                  if (marquee.showonbrowse) { marqueeTime = SDL_GetTicks() + 1000; strncpy(pendingClone, sel_clone->clone, sizeof(pendingClone) - 1); strncpy(pendingParent, sel_game->parent, sizeof(pendingParent) - 1); }
                }
                if (cc == keyz[k_pgame])                                    // [Up]: Move to bottom of game list if smart menu is enabled
                {
@@ -462,6 +465,7 @@ int main(int argc, char *argv[])
                   man_menu = 0;
                   cc = 0;
                   gamenum=totgames;
+                  if (marquee.showonbrowse) { marqueeTime = SDL_GetTicks() + 1000; strncpy(pendingClone, sel_clone->clone, sizeof(pendingClone) - 1); strncpy(pendingParent, sel_game->parent, sizeof(pendingParent) - 1); }
                }
             }
 
@@ -473,28 +477,32 @@ int main(int argc, char *argv[])
                   man_menu = 1;
                   cc = 0;
                   setLEDs(0);
+                  marqueeTime = 0; updateMarquee(NULL, NULL);
                }
                if ((cc == keyz[k_ngame]) && (sel_game == vectorgames->firstgame->prev))      // [Down]: Go to Man Menu if at bottom of list
                {
                   man_menu = 1;
                   cc = 0;
                   setLEDs(0);
+                  marqueeTime = 0; updateMarquee(NULL, NULL);
                }
                if (cc == keyz[k_pgame])                                                      // [Up]: go to previous game
                {
                   sel_game = sel_game->prev;
                   sel_clone = sel_game;
                   gamenum--;
+                  if (marquee.showonbrowse) { marqueeTime = SDL_GetTicks() + 1000; strncpy(pendingClone, sel_clone->clone, sizeof(pendingClone) - 1); strncpy(pendingParent, sel_game->parent, sizeof(pendingParent) - 1); }
                }
                if (cc == keyz[k_ngame])                                                      // [Down]: go to next game
                {
                   sel_game = sel_game->next;
                   sel_clone = sel_game;
                   gamenum++;
+                  if (marquee.showonbrowse) { marqueeTime = SDL_GetTicks() + 1000; strncpy(pendingClone, sel_clone->clone, sizeof(pendingClone) - 1); strncpy(pendingParent, sel_game->parent, sizeof(pendingParent) - 1); }
                }
                if (cc == keyz[k_start])                                                      // launch VMAME
                {
-                  RunGame(sel_clone->clone);
+                  RunGame(sel_clone->clone, sel_clone->command);
                }
                if (cc == keyz[k_nclone])                                                     // [Right]: go to next clone in list
                {
@@ -695,15 +703,18 @@ int main(int argc, char *argv[])
       if (err) break;
    }
 
-   // if loop exited, save config and return to DOS
-   inifp = fopen (ini_name, "w" );
-   if (inifp != NULL)
+   // if loop exited, save config if settings were changed
+   if (cfgDirty)
    {
-      printf("Writing cfg file... ");
-      writecfg();
-      iniparser_dump_ini(ini, inifp);
-      printf("Done.\n");
-      fclose(inifp);
+      inifp = fopen (ini_name, "w" );
+      if (inifp != NULL)
+      {
+         printf("Writing cfg file... ");
+         writecfg();
+         iniparser_dump_ini(ini, inifp);
+         printf("Done.\n");
+         fclose(inifp);
+      }
    }
    iniparser_freedict(ini);
    printf("Quitting to OS...\n");
@@ -1903,6 +1914,14 @@ void getsettings(void)
    }
    // If keys are set to contradict UP/DOWN/LEFT/RIGHT, set cpanel to "buttons" type
    if ((keyz[k_pman] == keyz[k_pgame]) || (keyz[k_nman] == keyz[k_ngame])) optz[o_cpanel] = 0;
+
+   // marquee settings
+   marquee.enabled     = iniparser_getboolean(ini, "marquee:enabled", 1);
+   marquee.showonbrowse = iniparser_getboolean(ini, "marquee:showonbrowse", 1);
+   marquee.showonlaunch = iniparser_getboolean(ini, "marquee:showonlaunch", 1);
+   marquee.display     = iniparser_getint(ini, "marquee:display", 0);
+   strncpy(marquee.path, iniparser_getstring(ini, "marquee:path", "artwork"), sizeof(marquee.path) - 1);
+   marquee.path[sizeof(marquee.path) - 1] = '\0';
 }
 
 
@@ -2027,6 +2046,14 @@ void writecfg()
    writeinival("colours:i_arrow",               colours[c_int][c_arrow], 1, 0);
    writeinival("colours:c_asteroids",           colours[c_col][c_asts], 1, 2);
    writeinival("colours:i_asteroids",           colours[c_int][c_asts], 1, 0);
+
+   // write the marquee settings
+   if (!iniparser_find_entry(ini, "marquee")) iniparser_set(ini, "marquee", NULL);
+   writeinival("marquee:enabled",              marquee.enabled, 1, 3);
+   writeinival("marquee:showonbrowse",         marquee.showonbrowse, 1, 3);
+   writeinival("marquee:showonlaunch",         marquee.showonlaunch, 1, 3);
+   writeinival("marquee:display",              marquee.display, 1, 0);
+   iniparser_set(ini, "marquee:path",          marquee.path);
 }
 
 
@@ -2108,7 +2135,7 @@ void PlayAttractGame(m_node *gameslist)
    args[ls] = ' ';
    strcpy(&args[ls+1], attractargs);
 
-   RunGame(args);
+   RunGame(args, NULL);
 }
 
 
@@ -2137,6 +2164,7 @@ void SetOptions(void)
    char  buffer[15];
    
    setLEDs(0);
+   cfgDirty = 1;                                // settings page opened, save on exit
    //mousefound=0; //For Testing
    while ((cc != keyz[k_options] && cc != keyz[k_quit] && cc != START2) && timer < 1800)
    {
