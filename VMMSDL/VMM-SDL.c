@@ -137,10 +137,15 @@ void InitialiseSDL(int start)
    {
       if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK) < 0)
       {
-         fprintf( stderr, "Could not initialise SDL: %s\n", SDL_GetError() );
-         exit( -1 );
+         SDL_setenv("SDL_VIDEODRIVER", "kmsdrm", 1);
+         if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK) < 0)
+         {
+            fprintf( stderr, "Could not initialise SDL\n");
+
+            exit( -1 );
+         }
+        printf("No display server, using kmsdrm video driver");
       }
-      //else printf("SDL Initialised\n");
    }
 
    for (int i = 0; i < SDL_NumJoysticks(); i++)
