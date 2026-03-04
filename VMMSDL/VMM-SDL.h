@@ -32,7 +32,6 @@ typedef struct {
    int  enabled;           // 0=disabled, 1=enabled
    int  showonbrowse;      // show marquee while browsing games
    int  showonlaunch;      // show marquee when launching game
-   int  display;           // which display to show marquee on (0=primary)
    char path[256];         // path to marquee artwork
 } marquee_settings;
 

@@ -1919,7 +1919,6 @@ void getsettings(void)
    marquee.enabled     = iniparser_getboolean(ini, "marquee:enabled", 1);
    marquee.showonbrowse = iniparser_getboolean(ini, "marquee:showonbrowse", 1);
    marquee.showonlaunch = iniparser_getboolean(ini, "marquee:showonlaunch", 1);
-   marquee.display     = iniparser_getint(ini, "marquee:display", 0);
    strncpy(marquee.path, iniparser_getstring(ini, "marquee:path", "artwork"), sizeof(marquee.path) - 1);
    marquee.path[sizeof(marquee.path) - 1] = '\0';
 }
@@ -2052,7 +2051,6 @@ void writecfg()
    writeinival("marquee:enabled",              marquee.enabled, 1, 3);
    writeinival("marquee:showonbrowse",         marquee.showonbrowse, 1, 3);
    writeinival("marquee:showonlaunch",         marquee.showonlaunch, 1, 3);
-   writeinival("marquee:display",              marquee.display, 1, 0);
    iniparser_set(ini, "marquee:path",          marquee.path);
 }
 

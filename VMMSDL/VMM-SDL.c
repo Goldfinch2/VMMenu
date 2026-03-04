@@ -10,6 +10,7 @@
    #include "LinuxVMM.h"
    #include <SDL2/SDL_mixer.h>
    #include <SDL2/SDL_image.h>
+   #include <unistd.h>
 #elif defined(__WIN32__) || defined(_WIN32)
    #include "WinVMM.h"
    #include <SDL_mixer.h>
@@ -52,13 +53,92 @@ marquee_settings marquee = {
    .enabled = 1,
    .showonbrowse = 1,
    .showonlaunch = 1,
-   .display = 0,
    .path = "artwork"
 };
 
 // Separate window/renderer for marquee display
 SDL_Window*    marqueeWindow = NULL;
 SDL_Renderer*  marqueeRenderer = NULL;
+static int     marqueeNeedsRender = 0;
+
+// Marquee loader thread
+static SDL_Thread*  marqueeThread    = NULL;
+static SDL_mutex*   marqueeMutex     = NULL;
+static SDL_Surface* pendingSurface   = NULL;  // produced by thread, consumed by main
+static char         pendingName[128] = "";    // image name for pendingSurface
+static int          surfaceReady     = 0;     // 1 = thread has a result waiting
+static char         threadReqClone[128]  = "";
+static char         threadReqParent[128] = "";
+static int          threadReqPending = 0;
+static int          threadShouldRun  = 0;
+
+static int marqueeLoadThread(void* unused)
+{
+   char clone[128], parent[128];
+   while (threadShouldRun)
+   {
+      SDL_LockMutex(marqueeMutex);
+      int hasPending = threadReqPending;
+      strncpy(clone,  threadReqClone,  sizeof(clone)  - 1);  clone[127]  = '\0';
+      strncpy(parent, threadReqParent, sizeof(parent) - 1);  parent[127] = '\0';
+      if (hasPending) threadReqPending = 0;
+      SDL_UnlockMutex(marqueeMutex);
+
+      if (hasPending)
+      {
+         SDL_Surface* surface = NULL;
+         char name[128] = "";
+         char path[512];
+
+         if (clone[0])
+         {
+            snprintf(path, sizeof(path), "%s/%s.png", marquee.path, clone);
+            surface = IMG_Load(path);
+            if (surface) strncpy(name, clone, sizeof(name) - 1);
+         }
+         if (!surface && parent[0])
+         {
+            snprintf(path, sizeof(path), "%s/%s.png", marquee.path, parent);
+            surface = IMG_Load(path);
+            if (surface) strncpy(name, parent, sizeof(name) - 1);
+         }
+
+         SDL_LockMutex(marqueeMutex);
+         if (pendingSurface) SDL_FreeSurface(pendingSurface);
+         pendingSurface = surface;
+         strncpy(pendingName, name, sizeof(pendingName) - 1);
+         pendingName[sizeof(pendingName) - 1] = '\0';
+         surfaceReady = 1;
+         SDL_UnlockMutex(marqueeMutex);
+      }
+      else
+      {
+         SDL_Delay(5);
+      }
+   }
+   return 0;
+}
+
+static void startMarqueeThread(void)
+{
+   if (marqueeThread) return;
+   marqueeMutex    = SDL_CreateMutex();
+   threadShouldRun = 1;
+   marqueeThread   = SDL_CreateThread(marqueeLoadThread, "MarqueeLoader", NULL);
+   printf("[\033[01;32mok\033[0m] Marquee loader thread started\n");
+}
+
+static void stopMarqueeThread(void)
+{
+   if (!marqueeThread) return;
+   threadShouldRun = 0;
+   SDL_WaitThread(marqueeThread, NULL);
+   marqueeThread = NULL;
+   if (marqueeMutex) { SDL_DestroyMutex(marqueeMutex); marqueeMutex = NULL; }
+   if (pendingSurface) { SDL_FreeSurface(pendingSurface); pendingSurface = NULL; }
+   surfaceReady = 0;
+}
+
 
 enum vsounds
 {
@@ -228,13 +308,14 @@ void InitialiseSDL(int start)
       SDL_JoystickEventState(SDL_ENABLE);
    }
 
-   // Create SDL Window
-   WINDOW_WIDTH=((WINDOW_HEIGHT/3)*4); // try to make the window 4:3
-   WINDOW_SCALE=(768.0/WINDOW_HEIGHT);
+   // Create SDL Window - use fullscreen desktop to get native display resolution
    window = SDL_CreateWindow( WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                              WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_HIDDEN); // | SDL_WINDOW_BORDERLESS);
+                              0, 0, SDL_WINDOW_HIDDEN | SDL_WINDOW_FULLSCREEN_DESKTOP);
 
-   screenRender = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE); // Don't use accelerated as it is tied to the screen refresh rate
+   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"); // linear filtering for smooth marquee scaling
+   screenRender = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+   SDL_GetWindowSize(window, &WINDOW_WIDTH, &WINDOW_HEIGHT);
+   WINDOW_SCALE=(768.0/WINDOW_HEIGHT);
    SDL_ShowWindow(window);
 
    #if defined(linux) || defined(__linux)
@@ -334,55 +415,8 @@ void playsound(int picksound)
 void initMarqueeWindow(void)
 {
    if (!marquee.enabled) return;
-   if (marqueeWindow) return;  // Already open (showonlaunch kept it open)
-
-   int numDisplays = SDL_GetNumVideoDisplays();
-   if (numDisplays < 1)
-   {
-      printf("[\033[01;33mX\033[0m] No displays found for marquee\n");
-      return;
-   }
-
-   int displayIndex = marquee.display;
-   if (displayIndex >= numDisplays)
-   {
-      printf("[\033[01;33mX\033[0m] Marquee display %d not found, using display 0\n", displayIndex);
-      displayIndex = 0;
-   }
-
-   SDL_Rect displayBounds;
-   if (SDL_GetDisplayBounds(displayIndex, &displayBounds) != 0)
-   {
-      printf("[\033[01;33mX\033[0m] Could not get display bounds: %s\n", SDL_GetError());
-      return;
-   }
-
-   marqueeWindow = SDL_CreateWindow("VMMenu Marquee",
-      displayBounds.x, displayBounds.y,
-      displayBounds.w, displayBounds.h,
-      SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN);
-
-   if (!marqueeWindow)
-   {
-      printf("[\033[01;33mX\033[0m] Could not create marquee window: %s\n", SDL_GetError());
-      return;
-   }
-
-   marqueeRenderer = SDL_CreateRenderer(marqueeWindow, -1, SDL_RENDERER_SOFTWARE);
-   if (!marqueeRenderer)
-   {
-      printf("[\033[01;33mX\033[0m] Could not create marquee renderer: %s\n", SDL_GetError());
-      SDL_DestroyWindow(marqueeWindow);
-      marqueeWindow = NULL;
-      return;
-   }
-
-   SDL_SetRenderDrawColor(marqueeRenderer, 0, 0, 0, 255);
-   SDL_RenderClear(marqueeRenderer);
-   SDL_RenderPresent(marqueeRenderer);
-
-   printf("[\033[01;32mok\033[0m] Marquee window created on display %d (%dx%d)\n",
-      displayIndex, displayBounds.w, displayBounds.h);
+   startMarqueeThread();
+   marqueeNeedsRender = 1;
 }
 
 
@@ -417,47 +451,23 @@ void closeMarqueeWindow(void)
 ********************************************************************/
 void updateMarquee(const char* cloneName, const char* parentName)
 {
-   char path[256];
-   SDL_Surface *surface = NULL;
-   SDL_Renderer* renderer = marqueeRenderer ? marqueeRenderer : screenRender;
-   const char* loadedName = NULL;
-
    if (!marquee.enabled) return;
-   if (!renderer) return;
 
-   // Try clone first
-   if (cloneName && cloneName[0])
-   {
-      if (strcmp(cloneName, currentMarquee) == 0) return;
-      snprintf(path, sizeof(path), "%s/%s.png", marquee.path, cloneName);
-      surface = IMG_Load(path);
-      if (surface) loadedName = cloneName;
-   }
+   const char* clone  = cloneName  ? cloneName  : "";
+   const char* parent = parentName ? parentName : "";
 
-   // Fall back to parent
-   if (!surface && parentName && parentName[0])
-   {
-      if (strcmp(parentName, currentMarquee) == 0) return;
-      snprintf(path, sizeof(path), "%s/%s.png", marquee.path, parentName);
-      surface = IMG_Load(path);
-      if (surface) loadedName = parentName;
-   }
+   if (clone[0]  && strcmp(clone,  currentMarquee) == 0) return;
+   if (parent[0] && strcmp(parent, currentMarquee) == 0) return;
 
-   if (surface)
-   {
-      if (marqueeTexture) SDL_DestroyTexture(marqueeTexture);
-      marqueeTexture = SDL_CreateTextureFromSurface(renderer, surface);
-      SDL_FreeSurface(surface);
-      strncpy(currentMarquee, loadedName, sizeof(currentMarquee) - 1);
-      currentMarquee[sizeof(currentMarquee) - 1] = '\0';
-   }
-   else
-   {
-      // No marquee file for this game - clear to black
-      if (marqueeTexture) SDL_DestroyTexture(marqueeTexture);
-      marqueeTexture = NULL;
-      currentMarquee[0] = '\0';
-   }
+   if (!marqueeMutex) return;
+   SDL_LockMutex(marqueeMutex);
+   strncpy(threadReqClone,  clone,  sizeof(threadReqClone)  - 1);
+   strncpy(threadReqParent, parent, sizeof(threadReqParent) - 1);
+   threadReqPending = 1;
+   // Discard any surface not yet picked up by main thread
+   if (pendingSurface) { SDL_FreeSurface(pendingSurface); pendingSurface = NULL; }
+   surfaceReady = 0;
+   SDL_UnlockMutex(marqueeMutex);
 }
 
 
@@ -467,6 +477,39 @@ void updateMarquee(const char* cloneName, const char* parentName)
 void renderMarquee(void)
 {
    if (!marquee.enabled) return;
+
+   // Pick up surface produced by loader thread (if any)
+   if (marqueeMutex)
+   {
+      SDL_LockMutex(marqueeMutex);
+      int ready = surfaceReady;
+      SDL_Surface* surface = pendingSurface;
+      char name[128];
+      strncpy(name, pendingName, sizeof(name) - 1);
+      name[sizeof(name) - 1] = '\0';
+      if (ready) { pendingSurface = NULL; surfaceReady = 0; }
+      SDL_UnlockMutex(marqueeMutex);
+
+      if (ready)
+      {
+         SDL_Renderer* renderer = marqueeRenderer ? marqueeRenderer : screenRender;
+         if (marqueeTexture) { SDL_DestroyTexture(marqueeTexture); marqueeTexture = NULL; }
+         if (surface)
+         {
+            marqueeTexture = SDL_CreateTextureFromSurface(renderer, surface);
+            SDL_FreeSurface(surface);
+            strncpy(currentMarquee, name, sizeof(currentMarquee) - 1);
+            currentMarquee[sizeof(currentMarquee) - 1] = '\0';
+         }
+         else
+         {
+            currentMarquee[0] = '\0';
+         }
+         marqueeNeedsRender = 1;
+      }
+   }
+
+   if (!marqueeNeedsRender) return;
 
    SDL_Renderer* renderer = marqueeRenderer ? marqueeRenderer : screenRender;
    SDL_Window* win = marqueeWindow ? marqueeWindow : window;
@@ -495,6 +538,7 @@ void renderMarquee(void)
    }
 
    SDL_RenderPresent(renderer);
+   marqueeNeedsRender = 0;
 }
 
 
@@ -521,6 +565,16 @@ void CloseSDL(int done)
    {
       closeMarqueeWindow();
    }
+   else
+   {
+      // Keep the loader thread alive, but the marquee texture is bound to
+      // screenRender which is about to be destroyed.  Destroy it now and clear
+      // currentMarquee so updateMarquee() will queue a fresh reload after SDL
+      // is re-initialised (RunGame calls updateMarquee once InitialiseSDL returns).
+      if (marqueeTexture) { SDL_DestroyTexture(marqueeTexture); marqueeTexture = NULL; }
+      currentMarquee[0] = '\0';
+   }
+   if (done) stopMarqueeThread();
 
    SDL_SetWindowGrab(window, SDL_FALSE);
    SDL_ShowCursor(SDL_ENABLE);
@@ -589,7 +643,7 @@ void FrameSendSDL()
    //printf("Start: %i\t| Time: %i\t| Loop duration: %i\t| Wait time: %i  \t| FPS ms: %i\t| VC: %i\t| CC: %i\n", timestart, timenow, duration, fps_ms-duration, fps_ms, vector_count, colour_sets);
    //if (!ZVGPresent)
    {
-      int fps_ms = 1000 / (ZVGPresent == 2 ? fps_dvg : fps_nodvg);
+      int fps_ms = 1000 / 42;
       if (duration < fps_ms) SDL_Delay(fps_ms-duration);
       //if ((duration < fps_ms) && ((fps_ms-duration)>0)) SDL_Delay(fps_ms-duration);
    }
@@ -850,14 +904,10 @@ void RunGame(char *gameargs, char *customcmd)
    savedMarquee[sizeof(savedMarquee) - 1] = '\0';
 
    setLEDs(0);
-   CloseSDL(0);                        // Close windows etc but don't quit SDL
+   CloseSDL(0);
    if (ZVGPresent)
-   {
-      //if (optz[o_redozvg])
-      //{
-         zvgFrameClose();              // Close the ZVG
-      //}
-   }
+      zvgFrameClose();
+
    if (customcmd && customcmd[0])
    {
       #if defined(linux) || defined(__linux)
@@ -876,17 +926,13 @@ void RunGame(char *gameargs, char *customcmd)
    }
    printf("Launching: [%s]\n", command);
    err = system(command);
-   //if (optz[o_redozvg] && ZVGPresent)  // Re-open the ZVG if MAME closed it
-   if (ZVGPresent)                     // Re-open the ZVG if MAME closed it
+
+   if (ZVGPresent)
    {
-      err = zvgFrameOpen();            // initialize everything
-      if (err)
-      {
-         zvgError( err);               // if it went wrong print error
-         exit(0);                      // and return to OS
-      }
+      err = zvgFrameOpen();
+      if (err) { zvgError(err); exit(0); }
    }
-   InitialiseSDL(1);                   // re-open windows etc
-   updateMarquee(savedMarquee, NULL);  // reload marquee for the game that was just played
+   InitialiseSDL(1);
+   updateMarquee(savedMarquee, NULL);
 }
 
