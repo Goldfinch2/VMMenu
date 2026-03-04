@@ -154,10 +154,24 @@ clean:
 	$(RMDIR) $(OBJ_DIR)
 
 # install
+INSTALL_DIR = /usr/local/share/advance
 install:
-#	cp $(EXEC) /usr/local/sbin
-	chown root $(EXEC)
-	chmod u+s $(EXEC)
+	mkdir -p $(INSTALL_DIR)/artwork
+	mkdir -p $(INSTALL_DIR)/VMMsnd
+	cp $(EXEC)    $(INSTALL_DIR)/
+	cp vmmenu.cfg $(INSTALL_DIR)/
+	cp vmmenu.ini $(INSTALL_DIR)/
+	cp artwork/*  $(INSTALL_DIR)/artwork/
+	cp VMMsnd/*   $(INSTALL_DIR)/VMMsnd/
+	cp vmm.sh     $(INSTALL_DIR)/
+	sed -i 's/\r//' $(INSTALL_DIR)/vmm.sh
+	chmod +x      $(INSTALL_DIR)/vmm.sh
+	chown root $(INSTALL_DIR)/$(EXEC)
+	chmod u+s  $(INSTALL_DIR)/$(EXEC)
+	chown -R pi:pi $(INSTALL_DIR)
+	chmod -R 775   $(INSTALL_DIR)
+	chown root     $(INSTALL_DIR)/$(EXEC)
+	chmod u+s      $(INSTALL_DIR)/$(EXEC)
 
 # Flags for linker
 $(EXEC) : $(OBJS)
