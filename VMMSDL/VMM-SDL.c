@@ -102,6 +102,12 @@ static int marqueeLoadThread(void* unused)
             surface = IMG_Load(path);
             if (surface) strncpy(name, parent, sizeof(name) - 1);
          }
+         if (!surface)
+         {
+            snprintf(path, sizeof(path), "%s/default.png", marquee.path);
+            surface = IMG_Load(path);
+            if (surface) strncpy(name, "default", sizeof(name) - 1);
+         }
 
          SDL_LockMutex(marqueeMutex);
          if (pendingSurface) SDL_FreeSurface(pendingSurface);
