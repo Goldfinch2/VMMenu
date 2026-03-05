@@ -518,7 +518,7 @@ int main(int argc, char *argv[])
             }
          }
 
-         if (optz[o_borders]) drawborders(-X_MAX, -Y_MAX, X_MAX, Y_MAX, 0, 2, vwhite);       // Draw frame around the edge of the screen
+         if (optz[o_borders]) drawborders(-X_MAX, -Y_MAX, X_MAX, Y_MAX, 0, 1, vwhite);       // Draw frame around the edge of the screen
 
          // print the manufacturer name
          strcpy(mytext, vectorgames->name);
@@ -930,29 +930,6 @@ void drawborders(int x1, int y1, int x2, int y2, int rot, int frames, int colour
       p1.y += BORD;
       p2.x -= BORD;
       p2.y -= BORD;
-   }
-   if (frames == 1)         // dropshadow, just for the beans of it
-   {
-      p2.x = p4.x + 20;
-      p2.y = p3.y - 20;
-      p1.x = p2.x - 20;
-      p1.y = p3.y;
-      drawvector(p1, p2, 0, 0);
-      p1.x = p3.x + 20;
-      p1.y = p2.y;
-      drawvector(p1, p2, 0, 0);
-      p2.x = p1.x;
-      p2.y = p4.y - 20;
-      drawvector(p1, p2, 0, 0);
-      p1.x = p3.x;
-      p1.y = p2.y +20;
-      drawvector(p1, p2, 0, 0);
-
-      p1.x = p2.x;
-      p1.y = p3.y - 20;
-      p2.x = p2.x - 20;
-      p2.y = p3.y ;
-      drawvector(p1, p2, 0, 0);
    }
    optz[o_rot] = rotvalue;
 }
