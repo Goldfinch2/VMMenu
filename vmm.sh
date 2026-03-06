@@ -9,8 +9,8 @@ printf '\033[2J\033[H' > /dev/tty1
 game="${1,,}"
 if [ -n "$2" ]; then
 #   echo "Custom Command Selected"
-#   echo "Command Line: /usr/local/share/advance/${1}_${2}"
-   /usr/local/share/advance/${1}_${2}
+   cd /usr/local/share/advance
+   ./${1}_${2}
 elif [[ $game == *.vec ]] || [[ $game == *.gam ]] || [[ $game == *.bin ]]
 then
 #   echo "Vectrex Game Selected"

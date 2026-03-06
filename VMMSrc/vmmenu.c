@@ -171,6 +171,23 @@ static Uint32 marqueeTime=0;            // SDL tick target for loading marquee
 static char  pendingClone[128]="";
 static char  pendingParent[128]="";
 
+/********************************************************************
+   Build manufacturer marquee filename from manufacturer name.
+   e.g. "Atari" -> "mfg_atari", "Game Arts" -> "mfg_game_arts"
+   Result is written to buf (must be at least 128 bytes).
+********************************************************************/
+static void mfgMarqueeName(const char *mfgName, char *buf, int bufsize)
+{
+   int i, j = 4;
+   buf[0] = 'm'; buf[1] = 'f'; buf[2] = 'g'; buf[3] = '_';
+   for (i = 0; mfgName[i] && j < bufsize - 1; i++)
+   {
+      if (mfgName[i] == ' ') buf[j++] = '_';
+      else buf[j++] = (mfgName[i] >= 'A' && mfgName[i] <= 'Z') ? mfgName[i] + 32 : mfgName[i];
+   }
+   buf[j] = '\0';
+}
+
 static char  autogame[30];
 static int   autostart=0;
 char         DVGPort[15];
@@ -193,6 +210,41 @@ char         auth2[] = "ChadsArcade@Gmail.com";
 #define      maxgamesonlist 13          // Must be ODD and (ideally) > 5 else you don't get the scroll effect
 
 vObject      mame;
+
+/********************************************************************
+   Find a game by clone name across all manufacturers and set the
+   menu selection to it. Returns the game number (1-based) if found,
+   0 otherwise. Sets vectorgames, sel_game, sel_clone, man_menu.
+********************************************************************/
+static int selectGameByClone(const char *cloneName)
+{
+   m_node *man = vectorgames;
+   do
+   {
+      g_node *game = man->firstgame;
+      int gnum = 1;
+      do
+      {
+         g_node *clone = game;
+         while (clone)
+         {
+            if (strcmp(clone->clone, cloneName) == 0)
+            {
+               vectorgames = man;
+               sel_game = game;
+               sel_clone = clone;
+               man_menu = 0;
+               return gnum;
+            }
+            clone = clone->nclone;
+         }
+         gnum++;
+         game = game->next;
+      } while (game != man->firstgame);
+      man = man->nmanuf;
+   } while (man != vectorgames);
+   return 0;
+}
 
 /*******************************************************************
  Main program loop
@@ -326,10 +378,22 @@ int main(int argc, char *argv[])
         }
    }
    // If we exit the auto started game, or aren't autostarting, lets go with the menu intro and loop
+   // Try to select the autostart game so the menu lands on it
+   if (autogame[0])
+   {
+      int gn = selectGameByClone(autogame);
+      if (gn) { gamenum = gn; totgames = numofgames(vectorgames); }
+   }
 
    /*** At this point we have a blank screen. Run an intro with the mame logo ***/
    mame = intro();
-   gamenum=1;
+   if (!autogame[0] || man_menu) gamenum = 1;
+   // Load initial marquee (manufacturer or game depending on selection)
+   if (marquee.showonbrowse)
+   {
+      if (man_menu) { char mfn[128]; mfgMarqueeName(vectorgames->name, mfn, sizeof(mfn)); updateMarquee(mfn, NULL); }
+      else updateMarquee(sel_clone->clone, sel_game->parent);
+   }
    // Start main loop
    while (1)
    {
@@ -416,12 +480,12 @@ int main(int argc, char *argv[])
                sel_game    = vectorgames->firstgame;
                sel_clone   = sel_game;
                man_menu    = 1;
-               marqueeTime = 0; updateMarquee(NULL, NULL);
+               { char mfn[128]; mfgMarqueeName(vectorgames->name, mfn, sizeof(mfn)); marqueeTime = 0; updateMarquee(mfn, NULL); }
             }
             if (cc == keyz[k_menu])
             {
                man_menu = !man_menu;                                          // Toggle between manufacturer and game menus
-               if (man_menu) { marqueeTime = 0; updateMarquee(NULL, NULL); }   // Clear marquee in manufacturer menu
+               if (man_menu) { char mfn[128]; mfgMarqueeName(vectorgames->name, mfn, sizeof(mfn)); marqueeTime = 0; updateMarquee(mfn, NULL); }
                else { marqueeTime = SDL_GetTicks() + 1000; strncpy(pendingClone, sel_clone->clone, sizeof(pendingClone) - 1); strncpy(pendingParent, sel_game->parent, sizeof(pendingParent) - 1); }
             }
             if (cc == keyz[k_random])        { g_node *rg = GetRandomGame(vectorgames); RunGame(rg->clone, rg->command); }
@@ -440,6 +504,7 @@ int main(int argc, char *argv[])
                   sel_clone = sel_game;
                   gamenum=1;
                   totgames=numofgames(vectorgames);
+                  if (marquee.showonbrowse) { char mfn[128]; mfgMarqueeName(vectorgames->name, mfn, sizeof(mfn)); marqueeTime = SDL_GetTicks() + 1000; strncpy(pendingClone, mfn, sizeof(pendingClone) - 1); pendingParent[0] = '\0'; }
                }
                if (cc == keyz[k_nman])                                     // [Right]: Go to next manufacturer
                {
@@ -448,6 +513,7 @@ int main(int argc, char *argv[])
                   sel_clone = sel_game;
                   gamenum=1;
                   totgames=numofgames(vectorgames);
+                  if (marquee.showonbrowse) { char mfn[128]; mfgMarqueeName(vectorgames->name, mfn, sizeof(mfn)); marqueeTime = SDL_GetTicks() + 1000; strncpy(pendingClone, mfn, sizeof(pendingClone) - 1); pendingParent[0] = '\0'; }
                }
                if (cc == keyz[k_ngame])                                    // [Down]: Move to top of game list if smart menu is enabled
                {
@@ -477,14 +543,14 @@ int main(int argc, char *argv[])
                   man_menu = 1;
                   cc = 0;
                   setLEDs(0);
-                  marqueeTime = 0; updateMarquee(NULL, NULL);
+                  { char mfn[128]; mfgMarqueeName(vectorgames->name, mfn, sizeof(mfn)); marqueeTime = 0; updateMarquee(mfn, NULL); }
                }
                if ((cc == keyz[k_ngame]) && (sel_game == vectorgames->firstgame->prev))      // [Down]: Go to Man Menu if at bottom of list
                {
                   man_menu = 1;
                   cc = 0;
                   setLEDs(0);
-                  marqueeTime = 0; updateMarquee(NULL, NULL);
+                  { char mfn[128]; mfgMarqueeName(vectorgames->name, mfn, sizeof(mfn)); marqueeTime = 0; updateMarquee(mfn, NULL); }
                }
                if (cc == keyz[k_pgame])                                                      // [Up]: go to previous game
                {
