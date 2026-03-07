@@ -10,7 +10,7 @@ game="${1,,}"
 if [ -n "$2" ]; then
 #   echo "Custom Command Selected"
    cd /usr/local/share/advance
-   ./${1}_${2}
+   ./${1}_${2} 2> /dev/null
 elif [[ $game == *.vec ]] || [[ $game == *.gam ]] || [[ $game == *.bin ]]
 then
 #   echo "Vectrex Game Selected"
